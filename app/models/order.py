@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Float, Enum, DateTime
+from sqlalchemy import Column, Integer, String, ForeignKey, Float, Enum, DateTime, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.db.session import Base
@@ -21,7 +21,9 @@ class Order(Base):
     total_amount = Column(Float, nullable=False)
     status = Column(Enum(OrderStatus), default=OrderStatus.Pending)
     created_at = Column(DateTime, default=datetime.utcnow)
-
+    razorpay_order_id = Column(String(255), nullable=True)
+    razorpay_payment_id = Column(String(255), nullable=True)
+    payment_confirmed_at = Column(DateTime, nullable=True)
     vendor_id = Column(Integer, ForeignKey("vendor.id"))
     vendor = relationship("Vendor", back_populates="orders")
 
@@ -35,7 +37,7 @@ class OrderItem(Base):
     product_name = Column(String, nullable=False)
     quantity = Column(Integer, nullable=False)
     price = Column(Float, nullable=False)
-
+    item_metadata = Column(JSON, nullable=True)  
     vendor_id = Column(Integer, ForeignKey("vendor.id"))  # <- Add this line
     order_id = Column(Integer, ForeignKey("orders.id"))
 

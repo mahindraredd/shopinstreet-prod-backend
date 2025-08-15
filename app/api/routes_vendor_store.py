@@ -2,14 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.models.vendor import Vendor
 from app.models.product import Product
-from app.schemas.vendorstore import VendorStoreSchema, TemplateUpdateSchema
+from app.schemas.vendorstore import VendorStoreSchema, TemplateUpdateSchema, VendorStoreSchemaNormal
 from app.db.deps import get_db
 from app.services.image_service import generate_presigned_url, process_and_upload_images, process_and_upload_images1
 
 router = APIRouter()
 
-
-@router.get("/vendors/{vendor_id}", response_model=VendorStoreSchema)
+@router.get("/vendors/{vendor_id}", response_model=VendorStoreSchemaNormal)
 def get_vendor_store(vendor_id: int, db: Session = Depends(get_db)):
     vendor = db.query(Vendor).filter(
         Vendor.id == vendor_id,
@@ -48,9 +47,30 @@ def update_vendor_template(vendor_id: int, data: TemplateUpdateSchema, db: Sessi
     if not vendor:
         raise HTTPException(status_code=404, detail="Vendor not found")
     
-    vendor.template_id = data.template_id
+    # Store original values to prevent auto-override
+    original_template_id = data.template_id
+    original_template_type = data.template_type if hasattr(data, 'template_type') else f"Template{data.template_id}"
+    
+    vendor.template_id = original_template_id
+    vendor.template_type = original_template_type
+    
+    print(f"Updating vendor {vendor_id} template to {data.template_id}")
+    
+    # Disable auto-assignment by temporarily setting a flag or 
+    # ensuring the assign_template_based_on_category method isn't called
+    
     db.commit()
+    
+    # Verify the assignment stuck
     db.refresh(vendor)
+    if vendor.template_id != original_template_id:
+        # Force the assignment again if it was overridden
+        vendor.template_id = original_template_id
+        vendor.template_type = original_template_type
+        db.commit()
+        db.refresh(vendor)
+    
+    print(f"Vendor {vendor_id} template updated to {vendor.template_id}")
     return {"message": "Template updated successfully", "template_id": vendor.template_id}
 
 
@@ -74,6 +94,7 @@ def get_vendor_store(vendor_id: int = Query(...), db: Session = Depends(get_db))
         "vendor_id": vendor.id,
         "business_name": vendor.business_name,
         "business_logo": vendor.business_logo,
+        "business_category": vendor.business_category,
         "categories": categories,
         "filters": {
             "priceRange": price_range,

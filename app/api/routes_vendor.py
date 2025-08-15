@@ -18,6 +18,7 @@ from app.crud import vendor as crud_vendor
 from app.models.vendor import Vendor
 from app.core.security import create_access_token, hash_password, verify_password
 import logging
+from app.schemas.product_enhanced import get_template_for_category
 from app.services.vendor_website_service import VendorWebsiteService
 import logging
 
@@ -112,6 +113,7 @@ def register_vendor(data: VendorRegister, db: Session = Depends(get_db)):
         logger.error(f"Vendor registration failed: {e}")
         raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
 
+
 @router.post("/login")
 def login_vendor(data: VendorLogin, db: Session = Depends(get_db)):
     vendor = crud_vendor.get_vendor_by_email(db, data.email)
@@ -119,15 +121,32 @@ def login_vendor(data: VendorLogin, db: Session = Depends(get_db)):
     if not vendor or not verify_password(data.password, vendor.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
+    # Auto-assign template type based on business category
+    template_type = get_template_for_category(vendor.business_category)
+    
+    # Update vendor's template_type in database if needed
+    if not hasattr(vendor, 'template_type') or vendor.template_type != template_type:
+        vendor.template_type = template_type
+        db.commit()
+
     token = create_access_token(data={"sub": vendor.email})
     
     return {
         "access_token": token,
         "token_type": "bearer",
-        "vendor_id": vendor.id,
-        "email": vendor.email,
-        "is_verified": vendor.is_verified
+        "vendor": {
+            "id": vendor.id,
+            "email": vendor.email,
+            "business_name": vendor.business_name,
+            "business_category": vendor.business_category,
+            "template_type": template_type,
+            "is_verified": vendor.is_verified,
+            "owner_name": vendor.owner_name,
+            "city": vendor.city,
+            "business_logo": vendor.business_logo
+        }
     }
+
 
 @router.get("/profile", response_model=VendorOut)
 def get_vendor_profile(

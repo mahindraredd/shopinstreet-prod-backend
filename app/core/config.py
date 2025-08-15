@@ -43,8 +43,8 @@ class Settings(BaseSettings):
     SUPPORTED_COUNTRIES: str = "India,Canada,United States"
 
     # Indian Payment Gateways
-    RAZORPAY_KEY_ID: Optional[str] = None
-    RAZORPAY_KEY_SECRET: Optional[str] = None
+    razorpay_key_id: str = "rzp_live_XMCXhnzCILmz5T"
+    razorpay_key_secret: str = "uIrpD5Gq3HNLzzYB0wsqpVOv"
     
     # PayU (Alternative Indian Payment Gateway)
     PAYU_MERCHANT_ID: Optional[str] = None

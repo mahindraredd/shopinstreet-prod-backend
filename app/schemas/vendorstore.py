@@ -18,11 +18,29 @@ class ProductSchema(BaseModel):
     stock: int
     price: float
     pricing_tiers: List[ProductPricingTierSchema]
+    clothing_details: Optional[dict] = None
+    food_details: Optional[dict] = None
+    created_at: Optional[datetime] = None
+    sale_price: Optional[float] = None
 
     class Config:
         from_attributes = True
 
 class VendorStoreSchema(BaseModel):
+    vendor_id: int
+    business_name: str
+    business_logo: Optional[str]
+    business_category: str  
+    categories: List[str]
+    filters: dict
+    products: List[ProductSchema]
+    template_id: int = 1  # Default template is 1
+    
+    class Config:
+        from_attributes = True
+        
+        
+class VendorStoreSchemaNormal(BaseModel):
     vendor_id: int
     business_name: str
     business_logo: Optional[str]
@@ -32,7 +50,7 @@ class VendorStoreSchema(BaseModel):
     template_id: int = 1  # Default template is 1
     
     class Config:
-        from_attributes = True
+        from_attributes = True        
 
 # Optional: Create a separate schema for template updates
 class TemplateUpdateSchema(BaseModel):

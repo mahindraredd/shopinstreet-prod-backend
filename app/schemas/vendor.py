@@ -39,7 +39,7 @@ class VendorOut(BaseModel):
     id: int
     business_name: str
     business_category: str
-    business_type: Optional[str] = None
+    #business_type: Optional[str] = None
     business_description: Optional[str] = None
     address: str
     city: str
@@ -91,7 +91,7 @@ class VendorProfileUpdate(BaseModel):
     """Schema for updating vendor profile information"""
     business_name: Optional[str] = None
     business_category: Optional[str] = None
-    business_type: Optional[str] = None
+    #business_type: Optional[str] = None
     business_description: Optional[str] = None
     owner_name: Optional[str] = None
     email: Optional[EmailStr] = None

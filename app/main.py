@@ -15,6 +15,7 @@ from app.api import routes_business_profile  # 👈 NEW: Business Profile import
 from app.core.database_optimizer import create_enterprise_indexes
 from app.db.session import SessionLocal
 from app.api.routes_domain import router as domain_router
+from app.api.routes_review import router as review_router
 # Add this import at the top of main.py
 from app.models.domain import VendorDomain, DomainSuggestion
 
@@ -61,6 +62,11 @@ app.include_router(
     tags=["AI Product Extraction"]
 )
 
+app.include_router(
+    review_router,
+    prefix="/api/reviews",
+    tags=["Reviews"]
+)
 # 👈 NEW: Business Profile routes
 app.include_router(
     routes_business_profile.router,

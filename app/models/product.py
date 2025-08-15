@@ -16,7 +16,10 @@ class Product(Base):
     vendor_id = Column(Integer, ForeignKey("vendor.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     price = Column(Float, nullable=False, default=0.0)
+    
     pricing_tiers = relationship("ProductPricingTier", back_populates="product", cascade="all, delete")
+    clothing_details = Column(JSON, nullable=True) 
+    food_details = Column(JSON, nullable=True)
 
 
 class ProductPricingTier(Base):

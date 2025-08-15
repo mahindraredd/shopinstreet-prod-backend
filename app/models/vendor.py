@@ -61,7 +61,8 @@ class Vendor(Base):
     is_verified = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     template_id = Column(Integer, default=1, nullable=True)
-
+    template_type = Column(String, default="Default", nullable=True)
+    
     # 🔧 FIXED: Enhanced Business Information (removed duplicate business_description)
     business_type = Column(String(50), nullable=True, index=True)  # Corporation, Partnership, etc.
     business_description = Column(Text, nullable=True)  # Keep only one declaration
@@ -120,6 +121,30 @@ class Vendor(Base):
         Index('idx_vendor_performance', 'profile_completion_percentage', 'created_at'),
     )
 
+    def get_template_type(self):
+        """Auto-assign template based on business category"""
+        if self.business_category == "Food":
+            return "Template8"
+        elif self.business_category == "Clothing":
+            return "Template7"
+        else:
+            return "Default"
+
+    def assign_template_based_on_category(self):
+        """Assign template ID and type based on business category"""
+        template_mapping = {
+            "Food": {"id": 8, "type": "Template8"},
+            "Clothing": {"id": 7, "type": "Template7"}
+        }
+    
+        if self.business_category in template_mapping:
+            template_info = template_mapping[self.business_category]
+            self.template_id = template_info["id"]
+            self.template_type = template_info["type"]
+        else:
+            # Default template
+            self.template_id = 1
+            self.template_type = "Default"   
     # ENTERPRISE ENCRYPTION METHODS
     @classmethod
     def _get_encryption_key(cls) -> bytes:
