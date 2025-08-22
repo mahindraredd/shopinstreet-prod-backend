@@ -108,10 +108,10 @@ class Vendor(Base):
     readiness_score = Column(Integer, default=0, nullable=False)
 
     # RELATIONSHIPS
-    orders = relationship("app.models.order.Order", back_populates="vendor", lazy="dynamic")
+    orders = relationship("Order", back_populates="vendor", lazy="dynamic")
+
+    # Also update these lines (remove the full module path):
     domain_orders = relationship("DomainOrder", back_populates="vendor", cascade="all, delete-orphan")
-
-
     domains = relationship("VendorDomain", back_populates="vendor")
     # ENTERPRISE PERFORMANCE INDEXES
     __table_args__ = (
