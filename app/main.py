@@ -27,7 +27,7 @@ from app.api.routes_ai import router as ai_router
 from app.api import routes_business_profile
 from app.api.routes_domain import router as domain_router
 from app.api.routes_review import router as review_router
-from app.routers import users, cart
+from app.routers import cashier, users, cart
 
 # Create FastAPI app
 app = FastAPI(
@@ -39,7 +39,7 @@ app = FastAPI(
 # Add middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Replace * with your frontend origin in production
+    allow_origins=["http://localhost:5173", "http://localhost:3000"],  # Add your frontend URLs
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -62,7 +62,7 @@ app.include_router(domain_router, prefix="/api/domains", tags=["Domains"])
 app.include_router(users.router, prefix="/users", tags=["Users"])
 app.include_router(cart.router, prefix="/cart", tags=["Cart"])
 app.include_router(vendor_store_router, prefix="/api")
-
+app.include_router(cashier.router, prefix="/api", tags=["cashier"])
 # Mount static files for deployed sites
 app.mount("/static_sites", StaticFiles(directory="static_sites"), name="static_sites")
 

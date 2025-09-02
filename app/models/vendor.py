@@ -109,10 +109,11 @@ class Vendor(Base):
 
     # RELATIONSHIPS
     orders = relationship("Order", back_populates="vendor", lazy="dynamic")
-
-    # Also update these lines (remove the full module path):
+    products = relationship("Product", back_populates="vendor", lazy="dynamic")  
     domain_orders = relationship("DomainOrder", back_populates="vendor", cascade="all, delete-orphan")
     domains = relationship("VendorDomain", back_populates="vendor")
+    register_sessions = relationship("RegisterSession", back_populates="vendor")
+
     # ENTERPRISE PERFORMANCE INDEXES
     __table_args__ = (
         Index('idx_vendor_business_profile', 'business_type', 'country', 'profile_completed'),

@@ -44,9 +44,10 @@ class OrderItemOut(OrderItemCreate):
 
 class OrderOut(BaseModel):
     id: int
-    customer_name: str
-    customer_email: str
-    shipping_address: str
+    customer_name: Optional[str] = None  # Make optional
+    customer_email: Optional[str] = None  # Make optional - THIS IS THE KEY FIX
+    customer_phone: Optional[str] = None  # Make optional
+    shipping_address: Optional[str] = None
     total_amount: float
     status: OrderStatus
     created_at: datetime
