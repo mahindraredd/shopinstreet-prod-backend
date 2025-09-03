@@ -28,7 +28,10 @@ def create_order(db: Session, order_data: OrderCreate, vendor_id: int):
     return order
 
 def get_orders_by_vendor(db: Session, vendor_id: int):
-    return db.query(Order).filter(Order.vendor_id == vendor_id).all()
+    return db.query(Order).filter(
+        Order.vendor_id == vendor_id,
+        Order.order_type != "pos"  # Exclude walk-in customers/POS orders
+    ).order_by(Order.created_at.desc()).all()
 
 def update_order_status(db: Session, order_id: int, new_status: str):
     order = db.query(Order).filter(Order.id == order_id).first()
