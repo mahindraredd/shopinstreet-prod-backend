@@ -113,6 +113,11 @@ class Vendor(Base):
     domain_orders = relationship("DomainOrder", back_populates="vendor", cascade="all, delete-orphan")
     domains = relationship("VendorDomain", back_populates="vendor")
     register_sessions = relationship("RegisterSession", back_populates="vendor")
+    customers = relationship("Customer", back_populates="vendor")
+    discounts = relationship("Discount", back_populates="vendor") 
+    promo_codes = relationship("PromoCode", back_populates="vendor")
+    tax_configurations = relationship("TaxConfiguration", back_populates="vendor")
+
 
     # ENTERPRISE PERFORMANCE INDEXES
     __table_args__ = (
