@@ -49,7 +49,10 @@ class Order(Base):
     # Relationships
     order_items = relationship("OrderItem", back_populates="order")
     register_session_id = Column(Integer, ForeignKey("register_sessions.id"), nullable=True)
-    
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
+    discount_id = Column(Integer, ForeignKey("discounts.id"), nullable=True)
+    promo_code_id = Column(Integer, ForeignKey("promo_codes.id"), nullable=True)
+    customer = relationship("Customer", back_populates="orders")
     # NEW: Add relationship
     register_session = relationship("RegisterSession", back_populates="transactions")
 
@@ -74,3 +77,4 @@ class OrderItem(Base):
     order = relationship("Order", back_populates="order_items")
     vendor = relationship("Vendor")
     product = relationship("Product")  # This will now work with the foreign key
+    

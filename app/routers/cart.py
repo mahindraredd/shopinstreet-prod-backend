@@ -22,6 +22,11 @@ import uuid
 import json  # Add this import for JSON parsing
 from datetime import datetime
 import traceback
+from app.models.pos_models import Customer, Discount, PromoCode, TaxConfiguration, DiscountType
+from app.models.vendor import Vendor
+from decimal import Decimal
+from typing import List, Optional, Dict
+from pydantic import BaseModel
 
 
 router = APIRouter()
@@ -623,3 +628,479 @@ def verify_payment(
             status_code=500, 
             detail=f"Payment verification failed: {str(e)}"
         )
+    
+# Add these imports to your existing cart router file
+from app.models.pos_models import Customer, Discount, PromoCode, TaxConfiguration, DiscountType
+from app.models.vendor import Vendor
+from decimal import Decimal
+from typing import List, Optional, Dict
+from pydantic import BaseModel
+
+# Add these Pydantic schemas to your cart router
+
+class CustomerCreate(BaseModel):
+    name: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    pincode: Optional[str] = None
+    notes: Optional[str] = None
+
+class CustomerResponse(BaseModel):
+    id: int
+    name: str
+    email: Optional[str]
+    phone: Optional[str]
+    address: Optional[str]
+    customer_type: str
+    total_orders: int
+    total_spent: float
+    last_visit: Optional[str]
+
+class DiscountApplication(BaseModel):
+    discount_type: str  # "percentage" or "fixed_amount"
+    value: float
+    minimum_order_amount: float = 0.0
+
+class PromoCodeApplication(BaseModel):
+    code: str
+
+class CartCalculation(BaseModel):
+    subtotal: float
+    discount_amount: float
+    tax_amount: float
+    total_amount: float
+    applied_discount: Optional[Dict] = None
+    applied_promo_code: Optional[str] = None
+    tax_rate: float
+
+# Add these new endpoints to your existing cart router
+
+@router.get("/items")
+def get_cart_items_for_checkout(
+    current_user_id: int = Depends(get_current_user_id), 
+    db: Session = Depends(get_db)
+):
+    """Get cart items with vendor details for POS checkout"""
+    try:
+        # Join with Product and Vendor tables to get vendor information
+        cart_items_query = db.query(
+            CartItem,
+            Product,
+            Vendor.id.label('vendor_id'),
+            Vendor.name.label('vendor_name'),
+            Vendor.business_name.label('vendor_business_name')
+        ).join(
+            Product, CartItem.product_id == Product.id
+        ).outerjoin(
+            Vendor, Product.vendor_id == Vendor.id
+        ).filter(
+            CartItem.user_id == current_user_id,
+            CartItem.status == "in_cart"
+        )
+        
+        cart_items_data = cart_items_query.all()
+        
+        result = []
+        for item_data in cart_items_data:
+            cart_item, product, vendor_id, vendor_name, vendor_business_name = item_data
+            
+            price = get_price_for_quantity(product, cart_item.quantity, db)
+            
+            # Generate presigned URLs for product images
+            image_urls = []
+            if product.image_urls:
+                try:
+                    image_urls = [
+                        generate_presigned_url(key) for key in product.image_urls
+                    ]
+                except Exception as e:
+                    print(f"Error generating presigned URLs: {e}")
+                    image_urls = []
+            
+            # Determine vendor display name
+            display_vendor_name = vendor_business_name or vendor_name or "Unknown Vendor"
+            
+            result.append({
+                "cart_item_id": cart_item.id,
+                "product_id": product.id,
+                "product_name": product.name,
+                "quantity": cart_item.quantity,
+                "price": price,
+                "total_price": price * cart_item.quantity,
+                "stock": product.stock,
+                "vendor_id": vendor_id,
+                "vendor_name": display_vendor_name,
+                "vendor_business_name": vendor_business_name,
+                "image_urls": image_urls,
+                "image_url": image_urls[0] if image_urls else None,
+                "item_metadata": cart_item.item_metadata
+            })
+        
+        return result
+        
+    except Exception as e:
+        print(f"Error in get_cart_items_for_checkout: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Failed to get cart items: {str(e)}")
+
+# Customer Management Endpoints
+
+@router.get("/customers/search/{vendor_id}")
+def search_customers(
+    vendor_id: int,
+    search: Optional[str] = None,
+    limit: int = 10,
+    db: Session = Depends(get_db)
+):
+    """Search customers for POS"""
+    query = db.query(Customer).filter(
+        Customer.vendor_id == vendor_id,
+        Customer.is_active == True
+    )
+    
+    if search:
+        search_term = f"%{search}%"
+        query = query.filter(
+            Customer.name.ilike(search_term) |
+            Customer.email.ilike(search_term) |
+            Customer.phone.ilike(search_term)
+        )
+    
+    customers = query.limit(limit).all()
+    
+    return [
+        CustomerResponse(
+            id=customer.id,
+            name=customer.name,
+            email=customer.email,
+            phone=customer.phone,
+            address=customer.address,
+            customer_type=customer.customer_type.value,
+            total_orders=customer.total_orders,
+            total_spent=float(customer.total_spent),
+            last_visit=customer.last_visit.isoformat() if customer.last_visit else None
+        )
+        for customer in customers
+    ]
+
+@router.post("/customers/{vendor_id}")
+def create_customer(
+    vendor_id: int,
+    customer_data: CustomerCreate,
+    db: Session = Depends(get_db)
+):
+    """Create new customer for POS"""
+    # Check if customer already exists
+    existing_customer = None
+    if customer_data.email:
+        existing_customer = db.query(Customer).filter(
+            Customer.vendor_id == vendor_id,
+            Customer.email == customer_data.email
+        ).first()
+    elif customer_data.phone:
+        existing_customer = db.query(Customer).filter(
+            Customer.vendor_id == vendor_id,
+            Customer.phone == customer_data.phone
+        ).first()
+    
+    if existing_customer:
+        raise HTTPException(status_code=400, detail="Customer already exists")
+    
+    new_customer = Customer(
+        name=customer_data.name,
+        email=customer_data.email,
+        phone=customer_data.phone,
+        address=customer_data.address,
+        city=customer_data.city,
+        state=customer_data.state,
+        pincode=customer_data.pincode,
+        notes=customer_data.notes,
+        vendor_id=vendor_id
+    )
+    
+    db.add(new_customer)
+    db.commit()
+    db.refresh(new_customer)
+    
+    return CustomerResponse(
+        id=new_customer.id,
+        name=new_customer.name,
+        email=new_customer.email,
+        phone=new_customer.phone,
+        address=new_customer.address,
+        customer_type=new_customer.customer_type.value,
+        total_orders=new_customer.total_orders,
+        total_spent=float(new_customer.total_spent),
+        last_visit=new_customer.last_visit.isoformat() if new_customer.last_visit else None
+    )
+
+# Discount and Tax Calculation Endpoints
+
+@router.post("/calculate-total/{vendor_id}")
+def calculate_cart_total(
+    vendor_id: int,
+    cart_item_ids: List[int],
+    customer_id: Optional[int] = None,
+    discount_data: Optional[DiscountApplication] = None,
+    promo_code: Optional[str] = None,
+    current_user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """Calculate cart total with discounts and taxes"""
+    
+    # Get cart items
+    cart_items = db.query(CartItem).filter(
+        CartItem.user_id == current_user_id,
+        CartItem.id.in_(cart_item_ids),
+        CartItem.status == "in_cart"
+    ).all()
+    
+    if not cart_items:
+        raise HTTPException(status_code=400, detail="No valid cart items found")
+    
+    # Calculate subtotal
+    subtotal = Decimal('0.0')
+    for cart_item in cart_items:
+        product = db.query(Product).filter(Product.id == cart_item.product_id).first()
+        if product:
+            price = get_price_for_quantity(product, cart_item.quantity, db)
+            subtotal += Decimal(str(price)) * cart_item.quantity
+    
+    # Apply discount
+    discount_amount = Decimal('0.0')
+    applied_discount = None
+    
+    if discount_data:
+        if discount_data.discount_type == "percentage":
+            discount_amount = subtotal * (Decimal(str(discount_data.value)) / 100)
+        else:  # fixed_amount
+            discount_amount = min(Decimal(str(discount_data.value)), subtotal)
+        
+        applied_discount = {
+            "type": discount_data.discount_type,
+            "value": discount_data.value,
+            "amount": float(discount_amount)
+        }
+    
+    # Apply promo code
+    applied_promo_code = None
+    if promo_code:
+        promo = db.query(PromoCode).filter(
+            PromoCode.code == promo_code,
+            PromoCode.vendor_id == vendor_id,
+            PromoCode.is_active == True
+        ).first()
+        
+        if promo and subtotal >= promo.minimum_order_amount:
+            promo_discount = Decimal('0.0')
+            if promo.discount_type == DiscountType.PERCENTAGE:
+                promo_discount = subtotal * (promo.value / 100)
+                if promo.maximum_discount_amount:
+                    promo_discount = min(promo_discount, promo.maximum_discount_amount)
+            else:
+                promo_discount = min(promo.value, subtotal)
+            
+            # Use higher discount
+            if promo_discount > discount_amount:
+                discount_amount = promo_discount
+                applied_promo_code = promo_code
+                applied_discount = {
+                    "type": promo.discount_type.value,
+                    "value": float(promo.value),
+                    "amount": float(promo_discount),
+                    "promo_code": promo_code
+                }
+    
+    # Calculate tax
+    tax_config = db.query(TaxConfiguration).filter(
+        TaxConfiguration.vendor_id == vendor_id,
+        TaxConfiguration.is_active == True,
+        TaxConfiguration.is_default == True
+    ).first()
+    
+    tax_rate = Decimal(str(tax_config.rate)) if tax_config else Decimal('6.0')  # Default 6%
+    discounted_subtotal = subtotal - discount_amount
+    tax_amount = discounted_subtotal * (tax_rate / 100)
+    total_amount = discounted_subtotal + tax_amount
+    
+    return CartCalculation(
+        subtotal=float(subtotal),
+        discount_amount=float(discount_amount),
+        tax_amount=float(tax_amount),
+        total_amount=float(total_amount),
+        applied_discount=applied_discount,
+        applied_promo_code=applied_promo_code,
+        tax_rate=float(tax_rate)
+    )
+
+@router.post("/validate-promo-code/{vendor_id}")
+def validate_promo_code(
+    vendor_id: int,
+    promo_data: PromoCodeApplication,
+    subtotal: float,
+    db: Session = Depends(get_db)
+):
+    """Validate and calculate promo code discount"""
+    
+    promo = db.query(PromoCode).filter(
+        PromoCode.code == promo_data.code,
+        PromoCode.vendor_id == vendor_id,
+        PromoCode.is_active == True
+    ).first()
+    
+    if not promo:
+        raise HTTPException(status_code=404, detail="Promo code not found or inactive")
+    
+    # Check validity dates
+    now = datetime.utcnow()
+    if promo.start_date and now < promo.start_date:
+        raise HTTPException(status_code=400, detail="Promo code is not yet valid")
+    
+    if promo.end_date and now > promo.end_date:
+        raise HTTPException(status_code=400, detail="Promo code has expired")
+    
+    # Check usage limit
+    if promo.usage_limit and promo.used_count >= promo.usage_limit:
+        raise HTTPException(status_code=400, detail="Promo code usage limit exceeded")
+    
+    # Check minimum order amount
+    if subtotal < float(promo.minimum_order_amount):
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Minimum order amount of {promo.minimum_order_amount} required"
+        )
+    
+    # Calculate discount
+    subtotal_decimal = Decimal(str(subtotal))
+    if promo.discount_type == DiscountType.PERCENTAGE:
+        discount_amount = subtotal_decimal * (promo.value / 100)
+        if promo.maximum_discount_amount:
+            discount_amount = min(discount_amount, promo.maximum_discount_amount)
+    else:
+        discount_amount = min(promo.value, subtotal_decimal)
+    
+    return {
+        "valid": True,
+        "discount_amount": float(discount_amount),
+        "discount_type": promo.discount_type.value,
+        "code": promo.code,
+        "name": promo.name,
+        "description": promo.description
+    }
+
+# Tax Management Endpoints - Enhanced with Flexibility
+
+@router.get("/tax-config/{vendor_id}")
+def get_tax_configuration(vendor_id: int, db: Session = Depends(get_db)):
+    """Get all tax configurations for vendor"""
+    
+    tax_configs = db.query(TaxConfiguration).filter(
+        TaxConfiguration.vendor_id == vendor_id,
+        TaxConfiguration.is_active == True
+    ).all()
+    
+    result = {
+        "tax_enabled": len(tax_configs) > 0,
+        "default_tax": None,
+        "available_taxes": []
+    }
+    
+    for tax_config in tax_configs:
+        tax_data = {
+            "id": tax_config.id,
+            "name": tax_config.name,
+            "rate": float(tax_config.rate),
+            "description": tax_config.description,
+            "tax_type": tax_config.tax_type,
+            "is_default": tax_config.is_default
+        }
+        
+        result["available_taxes"].append(tax_data)
+        
+        if tax_config.is_default:
+            result["default_tax"] = tax_data
+    
+    return result
+
+@router.post("/tax-config/{vendor_id}")
+def create_tax_configuration(
+    vendor_id: int,
+    tax_data: dict,
+    db: Session = Depends(get_db)
+):
+    """Create or update tax configuration for vendor"""
+    
+    # If setting as default, remove default from others
+    if tax_data.get("is_default", False):
+        db.query(TaxConfiguration).filter(
+            TaxConfiguration.vendor_id == vendor_id
+        ).update({"is_default": False})
+    
+    new_tax_config = TaxConfiguration(
+        name=tax_data["name"],
+        rate=Decimal(str(tax_data["rate"])),
+        description=tax_data.get("description"),
+        tax_type=tax_data.get("tax_type", "percentage"),
+        vendor_id=vendor_id,
+        is_default=tax_data.get("is_default", False),
+        is_active=tax_data.get("is_active", True)
+    )
+    
+    db.add(new_tax_config)
+    db.commit()
+    db.refresh(new_tax_config)
+    
+    return {
+        "id": new_tax_config.id,
+        "name": new_tax_config.name,
+        "rate": float(new_tax_config.rate),
+        "description": new_tax_config.description,
+        "tax_type": new_tax_config.tax_type,
+        "is_default": new_tax_config.is_default,
+        "is_active": new_tax_config.is_active
+    }
+
+@router.put("/tax-config/{vendor_id}/{tax_id}/toggle")
+def toggle_tax_configuration(
+    vendor_id: int,
+    tax_id: int,
+    db: Session = Depends(get_db)
+):
+    """Enable/disable tax configuration"""
+    
+    tax_config = db.query(TaxConfiguration).filter(
+        TaxConfiguration.id == tax_id,
+        TaxConfiguration.vendor_id == vendor_id
+    ).first()
+    
+    if not tax_config:
+        raise HTTPException(status_code=404, detail="Tax configuration not found")
+    
+    tax_config.is_active = not tax_config.is_active
+    db.commit()
+    
+    return {
+        "id": tax_config.id,
+        "name": tax_config.name,
+        "rate": float(tax_config.rate),
+        "is_active": tax_config.is_active,
+        "message": f"Tax configuration {'enabled' if tax_config.is_active else 'disabled'}"
+    }
+
+@router.delete("/tax-config/{vendor_id}")
+def disable_all_taxes(vendor_id: int, db: Session = Depends(get_db)):
+    """Disable all taxes for vendor (make tax optional)"""
+    
+    updated_count = db.query(TaxConfiguration).filter(
+        TaxConfiguration.vendor_id == vendor_id
+    ).update({"is_active": False})
+    
+    db.commit()
+    
+    return {
+        "message": f"Disabled {updated_count} tax configurations",
+        "tax_enabled": False
+    }
