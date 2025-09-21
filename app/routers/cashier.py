@@ -7,6 +7,7 @@ from app.db.deps import get_current_vendor, get_db
 from app.models.product import Product, ProductPricingTier
 from app.models.order import Order, OrderItem, OrderStatus
 from app.models.vendor import Vendor
+from app.models.customer import Customer
 from datetime import datetime
 import uuid
 from app.models.register import RegisterSession, RegisterStatus
@@ -23,6 +24,7 @@ class CashierItem(BaseModel):
     total_price: float
 
 class CashierCustomer(BaseModel):
+    id: Optional[int] = None
     name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
@@ -31,12 +33,15 @@ class CashierCheckout(BaseModel):
     vendor_id: int
     items: List[CashierItem]
     customer: Optional[CashierCustomer] = None
-    payment_method: str = "cash"  # cash, card, digital
+    payment_method: str = "cash"
     tax_amount: float = 0.0
     discount_amount: float = 0.0
     subtotal: float
     total_amount: float
     notes: Optional[str] = None
+    # Add customer-specific fields
+    loyalty_discount_applied: float = 0.0
+    points_redeemed: int = 0
 
 class CashierProduct(BaseModel):
     id: int
@@ -216,17 +221,22 @@ def get_product_pricing(product_id: int, quantity: int, db: Session = Depends(ge
         "total_price": price * quantity,
         "available_stock": product.stock
     }
+# Debug and fix the cashier checkout process
+# Add this to your cashier.py router to replace the existing checkout function
+# Update your existing cashier.py checkout function with customer integration
 
 @router.post("/cashier/checkout")
 def process_cashier_checkout(checkout_data: CashierCheckout, db: Session = Depends(get_db)):
-    """Process a cashier checkout transaction"""
+    """Process a cashier checkout transaction with customer integration"""
+    
+    print(f"Checkout data received: {checkout_data.dict()}")
     
     # Verify vendor exists
     vendor = db.query(Vendor).filter(Vendor.id == checkout_data.vendor_id).first()
     if not vendor:
         raise HTTPException(status_code=404, detail="Vendor not found")
     
-    # Get current open register session - FIXED: Ensure register_session is always defined
+    # Get current open register session
     register_session = db.query(RegisterSession).filter(
         and_(
             RegisterSession.vendor_id == checkout_data.vendor_id,
@@ -239,6 +249,48 @@ def process_cashier_checkout(checkout_data: CashierCheckout, db: Session = Depen
             status_code=400,
             detail="No register is open. Please open register before processing sales."
         )
+    
+    # Handle customer integration
+    customer = None
+    customer_created = False
+    
+    if checkout_data.customer:
+        if hasattr(checkout_data.customer, 'id') and checkout_data.customer.id:
+            # Existing customer
+            customer = db.query(Customer).filter(
+                Customer.id == checkout_data.customer.id,
+                Customer.vendor_id == checkout_data.vendor_id
+            ).first()
+        else:
+            # Check if customer exists by phone or email
+            existing_customer = None
+            if checkout_data.customer.phone:
+                existing_customer = db.query(Customer).filter(
+                    Customer.vendor_id == checkout_data.vendor_id,
+                    Customer.phone == checkout_data.customer.phone,
+                    Customer.is_active == True
+                ).first()
+            
+            if not existing_customer and checkout_data.customer.email:
+                existing_customer = db.query(Customer).filter(
+                    Customer.vendor_id == checkout_data.vendor_id,
+                    Customer.email == checkout_data.customer.email,
+                    Customer.is_active == True
+                ).first()
+            
+            if existing_customer:
+                customer = existing_customer
+            else:
+                # Create new customer
+                customer = Customer(
+                    vendor_id=checkout_data.vendor_id,
+                    name=checkout_data.customer.name or "Walk-in Customer",
+                    email=checkout_data.customer.email,
+                    phone=checkout_data.customer.phone
+                )
+                db.add(customer)
+                db.flush()  # Get the ID without committing
+                customer_created = True
     
     # Verify all products exist and have sufficient stock
     for item in checkout_data.items:
@@ -255,22 +307,37 @@ def process_cashier_checkout(checkout_data: CashierCheckout, db: Session = Depen
     # Generate unique order number for POS
     order_number = f"POS-{datetime.now().strftime('%Y%m%d')}-{str(uuid.uuid4())[:8].upper()}"
     
-    # Create the order with register session link
+    # Convert financial values to Decimal for database storage
+    from decimal import Decimal
+    
+    tax_amount = Decimal(str(checkout_data.tax_amount)) if checkout_data.tax_amount else Decimal('0.00')
+    discount_amount = Decimal(str(checkout_data.discount_amount)) if checkout_data.discount_amount else Decimal('0.00')
+    total_amount = Decimal(str(checkout_data.total_amount))
+    
+    print(f"Financial data being saved:")
+    print(f"  Tax Amount: {tax_amount}")
+    print(f"  Discount Amount: {discount_amount}")
+    print(f"  Total Amount: {total_amount}")
+    print(f"  Notes: {checkout_data.notes}")
+    print(f"  Customer: {customer.name if customer else 'None'}")
+    
+    # Create the order with customer integration
     new_order = Order(
         order_number=order_number,
-        customer_name=checkout_data.customer.name if checkout_data.customer else "Walk-in Customer",
-        customer_email=checkout_data.customer.email if checkout_data.customer else None,
-        customer_phone=checkout_data.customer.phone if checkout_data.customer else None,
+        customer_id=customer.id if customer else None,  # Link to customer
+        customer_name=customer.name if customer else "Walk-in Customer",
+        customer_email=customer.email if customer else None,
+        customer_phone=customer.phone if customer else None,
         shipping_address="In-Store Purchase",
-        total_amount=checkout_data.total_amount,
+        total_amount=total_amount,
         vendor_id=checkout_data.vendor_id,
         status=OrderStatus.Completed,
         payment_method=checkout_data.payment_method,
         payment_status="paid",
         order_type="pos",
-        register_session_id=register_session.id,  # Link to register session
-        tax_amount=checkout_data.tax_amount,
-        discount_amount=checkout_data.discount_amount,
+        register_session_id=register_session.id,
+        tax_amount=tax_amount,
+        discount_amount=discount_amount,
         notes=checkout_data.notes,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
@@ -288,7 +355,7 @@ def process_cashier_checkout(checkout_data: CashierCheckout, db: Session = Depen
             product_id=item.product_id,
             product_name=product.name,
             quantity=item.quantity,
-            price=item.unit_price,
+            price=Decimal(str(item.unit_price)),
             vendor_id=checkout_data.vendor_id,
             order_id=new_order.id
         )
@@ -297,16 +364,22 @@ def process_cashier_checkout(checkout_data: CashierCheckout, db: Session = Depen
         # Update product stock
         product.stock -= item.quantity
     
-    # Update register session totals - FIXED: Convert float to Decimal properly
-    register_session.total_sales += Decimal(str(checkout_data.total_amount))
+    # Update customer metrics if customer exists
+    points_earned = 0
+    if customer:
+        points_earned = customer.update_metrics(float(total_amount))
+        print(f"Customer metrics updated. Points earned: {points_earned}")
+    
+    # Update register session totals
+    register_session.total_sales += total_amount
     register_session.transaction_count += 1
     
     if checkout_data.payment_method == "cash":
-        register_session.total_cash_sales += Decimal(str(checkout_data.total_amount))
+        register_session.total_cash_sales += total_amount
     elif checkout_data.payment_method == "card":
-        register_session.total_card_sales += Decimal(str(checkout_data.total_amount))
+        register_session.total_card_sales += total_amount
     elif checkout_data.payment_method == "digital":
-        register_session.total_digital_sales += Decimal(str(checkout_data.total_amount))
+        register_session.total_digital_sales += total_amount
     
     db.commit()
     
@@ -314,12 +387,41 @@ def process_cashier_checkout(checkout_data: CashierCheckout, db: Session = Depen
         "success": True,
         "order_id": new_order.id,
         "order_number": order_number,
-        "total_amount": checkout_data.total_amount,
+        "total_amount": float(checkout_data.total_amount),
+        "tax_amount": float(tax_amount),
+        "discount_amount": float(discount_amount),
+        "notes": checkout_data.notes,
         "payment_method": checkout_data.payment_method,
         "items_count": len(checkout_data.items),
         "register_session_id": register_session.id,
-        "created_at": new_order.created_at.isoformat()
+        "created_at": new_order.created_at.isoformat(),
+        "customer": {
+            "id": customer.id,
+            "name": customer.name,
+            "phone": customer.phone,
+            "email": customer.email,
+            "loyalty_tier": customer.loyalty_tier,
+            "loyalty_points": customer.loyalty_points,
+            "points_earned": points_earned,
+            "total_spent": float(customer.total_spent),
+            "is_new_customer": customer_created
+        } if customer else None
     }
+        
+    
+    
+
+
+@router.post("/cashier/complete-transaction/{transaction_id}")
+def complete_transaction(transaction_id: int, db: Session = Depends(get_db)):
+    """Mark a pending transaction as completed"""
+    order = db.query(Order).filter(Order.id == transaction_id).first()
+    if order:
+        order.status = OrderStatus.Completed
+        db.commit()
+        return {"success": True}
+    raise HTTPException(status_code=404, detail="Transaction not found")
+
 @router.get("/cashier/recent-transactions/{vendor_id}")
 def get_recent_pos_transactions(
     vendor_id: int,
@@ -510,6 +612,80 @@ def close_register(
             "variance": variance,
             "variance_status": "over" if variance > 0 else "short" if variance < 0 else "exact",
             "transaction_count": open_register.transaction_count
+        }
+    }
+
+
+    # Add this debug endpoint to check order data
+# app/routers/debug.py or add to cashier.py
+
+@router.get("/debug/order/{order_id}")
+def debug_order_data(
+    order_id: int,
+    vendor: Vendor = Depends(get_current_vendor),
+    db: Session = Depends(get_db)
+):
+    """Debug endpoint to check what's actually saved in the order"""
+    
+    order = db.query(Order).filter(
+        Order.id == order_id,
+        Order.vendor_id == vendor.id
+    ).first()
+    
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    # Get all order attributes
+    order_data = {}
+    for column in order.__table__.columns:
+        value = getattr(order, column.name)
+        order_data[column.name] = value
+    
+    # Get order items
+    order_items = db.query(OrderItem).filter(OrderItem.order_id == order_id).all()
+    items_data = []
+    for item in order_items:
+        item_data = {}
+        for column in item.__table__.columns:
+            value = getattr(item, column.name)
+            item_data[column.name] = value
+        items_data.append(item_data)
+    
+    return {
+        "order": order_data,
+        "items": items_data,
+        "debug_info": {
+            "has_tax_amount": bool(order.tax_amount),
+            "has_discount_amount": bool(order.discount_amount), 
+            "has_notes": bool(order.notes),
+            "tax_amount_value": float(order.tax_amount) if order.tax_amount else None,
+            "discount_amount_value": float(order.discount_amount) if order.discount_amount else None,
+            "notes_value": order.notes
+        }
+    }
+
+# Also add this to verify your Order model has the required fields
+@router.get("/debug/order-model-fields")
+def debug_order_model():
+    """Check what fields exist in Order model"""
+    
+    from app.models.order import Order
+    
+    fields = []
+    for column in Order.__table__.columns:
+        fields.append({
+            "name": column.name,
+            "type": str(column.type),
+            "nullable": column.nullable,
+            "default": str(column.default) if column.default else None
+        })
+    
+    return {
+        "order_model_fields": fields,
+        "has_required_fields": {
+            "tax_amount": any(f["name"] == "tax_amount" for f in fields),
+            "discount_amount": any(f["name"] == "discount_amount" for f in fields),
+            "notes": any(f["name"] == "notes" for f in fields)
         }
     }
 

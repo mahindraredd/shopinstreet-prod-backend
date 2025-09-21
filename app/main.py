@@ -5,12 +5,14 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 
 # Database imports
 from app.db.session import engine, Base, SessionLocal
 from app.core.database_optimizer import create_enterprise_indexes
 
 # Model imports (needed for SQLAlchemy relationships)
+
 from app.models.domain import VendorDomain, DomainSuggestion
 from app.models.order import Order
 
@@ -28,6 +30,8 @@ from app.api import routes_business_profile
 from app.api.routes_domain import router as domain_router
 from app.api.routes_review import router as review_router
 from app.routers import cashier, users, cart
+from app.api.reciepts import router as receipts_router
+from app.api import customers
 
 # Create FastAPI app
 app = FastAPI(
@@ -50,6 +54,7 @@ app.add_middleware(SubdomainMiddleware)
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
+
 # Register API routes
 app.include_router(vendor_router, prefix="/api/vendor", tags=["Vendor"])
 app.include_router(product_router, prefix="/api/products", tags=["Product"])
@@ -63,6 +68,9 @@ app.include_router(users.router, prefix="/users", tags=["Users"])
 app.include_router(cart.router, prefix="/cart", tags=["Cart"])
 app.include_router(vendor_store_router, prefix="/api")
 app.include_router(cashier.router, prefix="/api", tags=["cashier"])
+app.include_router(receipts_router, prefix="/api", tags=["receipts"])
+app.include_router(receipts_router, prefix="/api", tags=["receipts"])
+app.include_router(customers.router, prefix="/api", tags=["customers"])
 # Mount static files for deployed sites
 app.mount("/static_sites", StaticFiles(directory="static_sites"), name="static_sites")
 

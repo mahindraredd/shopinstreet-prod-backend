@@ -117,6 +117,8 @@ class Vendor(Base):
     discounts = relationship("Discount", back_populates="vendor") 
     promo_codes = relationship("PromoCode", back_populates="vendor")
     tax_configurations = relationship("TaxConfiguration", back_populates="vendor")
+    # Add this to your Vendor model relationships
+    customers = relationship("Customer", back_populates="vendor")
 
 
     # ENTERPRISE PERFORMANCE INDEXES

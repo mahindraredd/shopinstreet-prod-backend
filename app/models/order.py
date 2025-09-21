@@ -1,17 +1,16 @@
-# app/models/order.py
+# app/models/order.py - FIXED VERSION
 from sqlalchemy import Column, Integer, String, ForeignKey, Float, Enum, DateTime, JSON, Text, DECIMAL
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.db.session import Base
 import enum
-from sqlalchemy import Column, Integer, String, ForeignKey, Float, Enum, DateTime, JSON, Text, DECIMAL
 
 class OrderStatus(str, enum.Enum):
     Pending = "Pending"
     Processing = "Processing"
     Shipped = "Shipped"
     Delivered = "Delivered"
-    Completed = "Completed"  # NEW: For POS transactions
+    Completed = "Completed"  # For POS transactions
 
 class Order(Base):
     __tablename__ = "orders"
@@ -36,7 +35,7 @@ class Order(Base):
     vendor_id = Column(Integer, ForeignKey("vendor.id"))
     vendor = relationship("Vendor", back_populates="orders")
     
-    # NEW: Cashier/POS fields (will be added by migration)
+    # POS fields
     order_number = Column(String(100), unique=True, nullable=True, index=True)  # POS-YYYYMMDD-XXXXX
     order_type = Column(String(20), default="online")    # online or pos  
     payment_method = Column(String(50), default="cash")  # cash, card, digital
@@ -46,35 +45,32 @@ class Order(Base):
     notes = Column(Text, nullable=True)                   # Additional notes
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Relationships
-    order_items = relationship("OrderItem", back_populates="order")
+    # Foreign Keys - FIXED: Removed duplicate customer_id
     register_session_id = Column(Integer, ForeignKey("register_sessions.id"), nullable=True)
     customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
     discount_id = Column(Integer, ForeignKey("discounts.id"), nullable=True)
     promo_code_id = Column(Integer, ForeignKey("promo_codes.id"), nullable=True)
-    customer = relationship("Customer", back_populates="orders")
-    # NEW: Add relationship
+    
+    # Relationships - FIXED: Removed duplicates
+    order_items = relationship("OrderItem", back_populates="order")
     register_session = relationship("RegisterSession", back_populates="transactions")
-
+    customer = relationship("Customer", back_populates="orders")
 
 class OrderItem(Base):
     __tablename__ = "order_items"
 
     id = Column(Integer, primary_key=True, index=True)
     
-    # FIXED: Added proper foreign key constraint to products table
+    # Foreign keys
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
     product_name = Column(String, nullable=False)
     quantity = Column(Integer, nullable=False)
     price = Column(Float, nullable=False)
     item_metadata = Column(JSON, nullable=True)  
     order_id = Column(Integer, ForeignKey("orders.id"))
-    
-    # Existing relationship (preserved) 
     vendor_id = Column(Integer, ForeignKey("vendor.id"))  
     
     # Relationships
     order = relationship("Order", back_populates="order_items")
     vendor = relationship("Vendor")
-    product = relationship("Product")  # This will now work with the foreign key
-    
+    product = relationship("Product")

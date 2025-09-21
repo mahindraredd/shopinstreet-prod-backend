@@ -10,40 +10,6 @@ class CustomerType(str, enum.Enum):
     REGULAR = "regular"
     VIP = "vip"
 
-class Customer(Base):
-    __tablename__ = "customers"
-
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(255), nullable=False, index=True)
-    email = Column(String(255), nullable=True, index=True)
-    phone = Column(String(50), nullable=True, index=True)
-    
-    # Customer details
-    address = Column(Text, nullable=True)
-    city = Column(String(100), nullable=True)
-    state = Column(String(100), nullable=True)
-    pincode = Column(String(20), nullable=True)
-    
-    # Customer categorization
-    customer_type = Column(Enum(CustomerType), default=CustomerType.REGULAR)
-    notes = Column(Text, nullable=True)
-    
-    # Vendor association
-    vendor_id = Column(Integer, ForeignKey("vendor.id"), nullable=False)
-    
-    # Customer stats
-    total_orders = Column(Integer, default=0)
-    total_spent = Column(DECIMAL(10,2), default=0.0)
-    last_visit = Column(DateTime, nullable=True)
-    
-    # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    is_active = Column(Boolean, default=True)
-
-    # Relationships
-    vendor = relationship("Vendor", back_populates="customers")
-    orders = relationship("Order", back_populates="customer")
 
 class DiscountType(str, enum.Enum):
     PERCENTAGE = "percentage"
@@ -51,6 +17,7 @@ class DiscountType(str, enum.Enum):
 
 class Discount(Base):
     __tablename__ = "discounts"
+    __table_args__ = {'extend_existing': True}
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
@@ -83,6 +50,7 @@ class Discount(Base):
 
 class PromoCode(Base):
     __tablename__ = "promo_codes"
+    __table_args__ = {'extend_existing': True}
 
     id = Column(Integer, primary_key=True, index=True)
     code = Column(String(50), nullable=False, unique=True, index=True)
@@ -116,6 +84,7 @@ class PromoCode(Base):
 
 class TaxConfiguration(Base):
     __tablename__ = "tax_configurations"
+    __table_args__ = {'extend_existing': True}
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)  # e.g., "State Tax", "GST", etc.

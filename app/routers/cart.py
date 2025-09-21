@@ -1,3 +1,5 @@
+# app/routers/cart.py - FIXED IMPORTS (Replace the import section)
+
 from app.schemas.schemas import UserSignup, CartItemCreate, ShippingInfo, CartItemUpdate
 from app.crud import user, cart, shipping
 from fastapi import APIRouter, Depends, HTTPException, status, Path
@@ -9,7 +11,7 @@ from sqlalchemy import func
 from app.models.models import CartItem
 from app.models.product import Product, ProductPricingTier
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import Dict, List, Optional
 from collections import defaultdict
 from app.utils.utils import get_current_user_id  # Import the auth dependency
 from app.services.image_service import generate_presigned_url
@@ -22,14 +24,21 @@ import uuid
 import json  # Add this import for JSON parsing
 from datetime import datetime
 import traceback
-from app.models.pos_models import Customer, Discount, PromoCode, TaxConfiguration, DiscountType
+
+# FIXED: Import Customer from the comprehensive model
+from app.models.customer import Customer
+from app.models.pos_models import Discount, PromoCode, TaxConfiguration, DiscountType
 from app.models.vendor import Vendor
 from decimal import Decimal
-from typing import List, Optional, Dict
-from pydantic import BaseModel
 
+# Remove these duplicate lines that are causing the error:
+# from app.models.pos_models import Customer, Discount, PromoCode, TaxConfiguration, DiscountType
+# from app.models.customer import Customer  # Use the comprehensive Customer model
+# from app.models.customer import Customer
 
 router = APIRouter()
+
+# Rest of your code remains the same...
 
 # New schema for checkout with selected items
 class CheckoutRequest(BaseModel):
@@ -628,13 +637,6 @@ def verify_payment(
             status_code=500, 
             detail=f"Payment verification failed: {str(e)}"
         )
-    
-# Add these imports to your existing cart router file
-from app.models.pos_models import Customer, Discount, PromoCode, TaxConfiguration, DiscountType
-from app.models.vendor import Vendor
-from decimal import Decimal
-from typing import List, Optional, Dict
-from pydantic import BaseModel
 
 # Add these Pydantic schemas to your cart router
 
